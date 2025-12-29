@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { prisma } from "../config/db";
 import { ApiError } from "../utils/ApiError";
 import { logger } from "../utils/logger";
@@ -31,7 +32,6 @@ type UpdateTodoPayload = {
   categoryId?: number | null;
 };
 
-
 /** CREATE */
 export const createTodo = async (
   userId: number,
@@ -51,20 +51,16 @@ export const createTodo = async (
       title,
       date: new Date(date),
       userId,
-      categoryId, 
+      categoryId,
     },
-    include: categoryInclude, 
+    include: categoryInclude,
   });
 };
-
-
-
 
 function parseDateUTC(dateStr: string): Date {
   const [y, m, d] = dateStr.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d));
 }
-
 
 export const createTodosByRange = async (
   userId: number,
@@ -86,15 +82,15 @@ export const createTodosByRange = async (
 
   let count = 0;
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     for (let i = 0; i < diffDays; i++) {
       const date = new Date(start);
-      date.setUTCDate(start.getUTCDate() + i); 
+      date.setUTCDate(start.getUTCDate() + i);
 
       await tx.todo.create({
         data: {
           title,
-          date, 
+          date,
           userId,
           categoryId,
           reminderTime,
@@ -108,8 +104,6 @@ export const createTodosByRange = async (
   return count;
 };
 
-
-
 /** READ */
 export const findMyTodos = async (userId: number) => {
   logger.info(`Finding todos for user ${userId}`);
@@ -122,10 +116,7 @@ export const findMyTodos = async (userId: number) => {
 };
 
 /** READ (DATE BASED) */
-export const findTodosByDate = async (
-  userId: number,
-  date: string
-) => {
+export const findTodosByDate = async (userId: number, date: string) => {
   logger.info(`Finding todos for user ${userId} on date ${date}`);
 
   const start = new Date(`${date}T00:00:00.000Z`);
@@ -145,11 +136,7 @@ export const findTodosByDate = async (
 };
 
 // db 인스턴스 기반 transaction 처리
-export const findTodoById = async (
-  db: PrismaClient,
-  todoId: number,
-  userId: number
-) => {
+export const findTodoById = async (db: PrismaClient, todoId: number, userId: number) => {
   logger.info(`Finding todo ${todoId} for user ${userId}`);
 
   const todo = await db.todo.findFirst({
@@ -162,12 +149,12 @@ export const findTodoById = async (
 };
 
 export const findTodosByRange = async (
-  prisma: PrismaClient,
+  prismaClient: PrismaClient,
   userId: number,
   start: string,
   end: string
 ) => {
-  return prisma.todo.findMany({
+  return prismaClient.todo.findMany({
     where: {
       userId,
       date: {
@@ -182,64 +169,37 @@ export const findTodosByRange = async (
   });
 };
 
-
-export const findRecentTodos = async (
-  prisma: PrismaClient,
-  userId: number,
-  limit: number
-) => {
-  return prisma.todo.findMany({
+export const findRecentTodos = async (prismaClient: PrismaClient, userId: number, limit: number) => {
+  return prismaClient.todo.findMany({
     where: {
       userId,
       date: {
-        gte: new Date(), // 오늘 이후 일정만
+        gte: new Date(),
       },
     },
     orderBy: {
-      createdAt: "desc", // 최신 생성 순
+      createdAt: "desc",
     },
     take: limit,
     include: categoryInclude,
   });
 };
 
-
-
 /** UPDATE */
-export const updateTodo = async (
-  todoId: number,
-  userId: number,
-  data: UpdateTodoPayload
-) => {
-  logger.info(
-    `Updating todo ${todoId} for user ${userId} with data: ${JSON.stringify(
-      data
-    )}`
-  );
+export const updateTodo = async (todoId: number, userId: number, data: UpdateTodoPayload) => {
+  logger.info(`Updating todo ${todoId} for user ${userId} with data: ${JSON.stringify(data)}`);
 
-  // 🔥 PATCH 핵심: undefined 제거
   const updateData: any = {};
 
-  if (data.title !== undefined) {
-    updateData.title = data.title;
-  }
-
-  if (data.completed !== undefined) {
-    updateData.completed = data.completed;
-  }
-
-  if (data.description !== undefined) {
-    updateData.description = data.description;
-  }
+  if (data.title !== undefined) updateData.title = data.title;
+  if (data.completed !== undefined) updateData.completed = data.completed;
+  if (data.description !== undefined) updateData.description = data.description;
 
   if (data.reminderTime !== undefined) {
-    updateData.reminderTime = data.reminderTime
-      ? new Date(data.reminderTime)
-      : null;
+    updateData.reminderTime = data.reminderTime ? new Date(data.reminderTime) : null;
   }
 
   if (data.reminderOffset !== undefined) updateData.reminderOffset = data.reminderOffset;
-  //if (data.notificationId !== undefined) updateData.notificationId = data.notificationId;
   if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
 
   logger.info(`FINAL updateData: ${JSON.stringify(updateData)}`);
@@ -256,8 +216,6 @@ export const updateTodo = async (
     data: updateData,
   });
 };
-
-
 
 /** TOGGLE */
 export const toggleTodo = async (todoId: number, userId: number) => {
@@ -288,30 +246,24 @@ export const deleteTodo = async (todoId: number, userId: number) => {
         userId,
       },
     });
-  } catch (e) {
-    if (
-      e instanceof Prisma.PrismaClientKnownRequestError &&
-      e.code === "P2025"
-    ) {
+  } catch (e: unknown) {
+    if (e instanceof PrismaClientKnownRequestError && e.code === "P2025") {
       throw new ApiError("TODO_NOT_FOUND");
     }
     throw e;
   }
 };
 
-// 전체삭제 todo
 /** DELETE ALL */
 export const deleteAllTodos = async (userId: number) => {
   logger.info(`Deleting ALL todos for user ${userId}`);
 
-  // 해당 유저의 todo 전부 삭제
   const result = await prisma.todo.deleteMany({
     where: { userId },
   });
 
-  return result; // { count: number } 필요하면 컨트롤러에서 사용 가능
+  return result;
 };
-
 
 /* Anniversary 관련 서비스 함수들 */
 /** CREATE */
@@ -334,10 +286,7 @@ export const createAnniversary = async (
 };
 
 /** READ (월별 / 전체) */
-export const findAnniversaries = async (
-  userId: number,
-  month?: number
-) => {
+export const findAnniversaries = async (userId: number, month?: number) => {
   return prisma.anniversary.findMany({
     where: {
       userId,
@@ -348,10 +297,7 @@ export const findAnniversaries = async (
 };
 
 /** READ (단건) */
-export const findAnniversaryById = async (
-  id: number,
-  userId: number
-) => {
+export const findAnniversaryById = async (id: number, userId: number) => {
   return prisma.anniversary.findFirst({
     where: { id, userId },
   });
@@ -375,10 +321,7 @@ export const updateAnniversary = async (
 };
 
 /** DELETE */
-export const deleteAnniversary = async (
-  id: number,
-  userId: number
-) => {
+export const deleteAnniversary = async (id: number, userId: number) => {
   return prisma.anniversary.deleteMany({
     where: { id, userId },
   });

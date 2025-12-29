@@ -1,13 +1,9 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "../config/db";
-import {
-  signAccessToken,
-  signRefreshToken,
-  verifyRefreshToken,
-} from "../utils/token";
-import { UserStatus } from "@prisma/client";
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../utils/token";
 import { OAuth2Client } from "google-auth-library";
 import { logger } from "../utils/logger";
+
 // 이메일 인증관련
 import crypto from "crypto";
 import { sendVerificationEmail } from "../utils/mailer";
@@ -28,6 +24,7 @@ function buildVerifyUrl(token: string) {
 }
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 export const getMe = async (userId: number) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -54,7 +51,9 @@ export async function login(email: string, password: string) {
   });
 
   if (!user) throw new Error("INVALID_CREDENTIALS");
-  if (user.status !== UserStatus.ACTIVE) throw new Error("USER_NOT_ACTIVE");
+
+  // UserStatus enum import가 서버에서 깨져서 문자열 비교로 처리
+  if (String(user.status) !== "ACTIVE") throw new Error("USER_NOT_ACTIVE");
 
   const passwordMatch = await bcrypt.compare(password, user.passwordHash);
   if (!passwordMatch) throw new Error("INVALID_CREDENTIALS");
@@ -112,7 +111,7 @@ export async function refresh(refreshToken: string) {
   });
 
   const matchedToken = await Promise.all(
-    tokens.map(async (t) => {
+    tokens.map(async (t: (typeof tokens)[number]) => {
       const match = await bcrypt.compare(refreshToken, t.token);
       return match ? t : null;
     })
@@ -122,13 +121,13 @@ export async function refresh(refreshToken: string) {
     throw new Error("INVALID_REFRESH_TOKEN");
   }
 
-  // 1️⃣ 기존 refreshToken 폐기
+  // 1) 기존 refreshToken 폐기
   await prisma.refreshToken.update({
     where: { id: matchedToken.id },
     data: { revokedAt: new Date() },
   });
 
-  // 2️⃣ 새 refreshToken 발급
+  // 2) 새 refreshToken 발급
   const newRefreshToken = signRefreshToken({
     userId: payload.userId,
     email: payload.email,
@@ -144,7 +143,7 @@ export async function refresh(refreshToken: string) {
     },
   });
 
-  // 3️⃣ 새 accessToken 발급
+  // 3) 새 accessToken 발급
   const newAccessToken = signAccessToken({
     userId: payload.userId,
     email: payload.email,
@@ -203,7 +202,7 @@ export async function loginWithGoogle(idToken: string) {
   const email = payload.email;
   const googleUserId = payload.sub;
 
-  // 🔥 provider 기준으로 찾기
+  // provider 기준으로 찾기
   let user = await prisma.user.findFirst({
     where: {
       provider: "google",
@@ -211,21 +210,20 @@ export async function loginWithGoogle(idToken: string) {
     },
   });
 
-  // 🔥 없으면 생성
+  // 없으면 생성
   if (!user) {
     user = await prisma.user.create({
       data: {
         email,
         provider: "google",
         providerUserId: payload.sub,
-        status: UserStatus.ACTIVE,
+        status: "ACTIVE" as any,
         passwordHash: "",
         emailVerifiedAt: new Date(),
       },
     });
   }
 
-  // 토큰 발급 (기존 로직 그대로)
   const accessToken = signAccessToken({
     userId: user.id,
     email: user.email,
@@ -260,31 +258,27 @@ export async function loginWithGoogle(idToken: string) {
 
 export async function inactive(userId: number) {
   logger.info(`user inactive service`);
-  
+
   await prisma.user.update({
     where: { id: userId },
-    data: { status: UserStatus.INACTIVE }, // 또는 DELETED
+    data: { status: "INACTIVE" as any },
   });
 
-  // 옵션: refreshToken 전부 revoked 처리
+  // refreshToken 전부 revoked 처리
   await prisma.refreshToken.updateMany({
     where: { userId, revokedAt: null },
     data: { revokedAt: new Date() },
   });
 }
 
-
 // 회원가입 api
-
 export async function register(email: string, password: string) {
   const e = (email ?? "").trim().toLowerCase();
   if (!e) throw new Error("EMAIL_REQUIRED");
   if (!password) throw new Error("PASSWORD_REQUIRED");
 
-  // 이미 존재하는지 확인
   const existing = await prisma.user.findUnique({ where: { email: e } });
 
-  // 구글 계정으로 이미 가입된 이메일이면 일단 막는 게 단순함 (나중에 계정 연결 구현)
   if (existing && existing.provider === "google") {
     throw new Error("EMAIL_ALREADY_USED");
   }
@@ -297,17 +291,16 @@ export async function register(email: string, password: string) {
     const user = await prisma.user.create({
       data: {
         email: e,
-        provider: "local",        // 너 schema에 맞춰서 "local" 또는 null
+        provider: "local",
         providerUserId: null,
         passwordHash,
-        status: UserStatus.ACTIVE, // ACTIVE로 두고, 로그인에서 emailVerifiedAt으로 차단
+        status: "ACTIVE" as any,
         emailVerifiedAt: null,
       },
       select: { id: true },
     });
     userId = user.id;
   } else {
-    // 미인증 계정이면 비번 갱신 + 재발송 허용(사용자가 다시 시도할 때)
     if (existing.emailVerifiedAt) throw new Error("EMAIL_ALREADY_USED");
 
     await prisma.user.update({
@@ -317,15 +310,14 @@ export async function register(email: string, password: string) {
     userId = existing.id;
   }
 
-  // 이전 토큰들 정리(선택)
   await prisma.emailVerification.updateMany({
     where: { userId, usedAt: null },
-    data: { usedAt: new Date() }, // 기존 미사용 토큰 무효화
+    data: { usedAt: new Date() },
   });
 
   const rawToken = makeRandomToken(32);
   const tokenHash = sha256(rawToken);
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 30); // 30분
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 30);
 
   await prisma.emailVerification.create({
     data: {
@@ -384,10 +376,9 @@ export async function resendVerification(email: string) {
 
   const user = await prisma.user.findUnique({ where: { email: e } });
   if (!user) throw new Error("USER_NOT_FOUND");
-  if (user.provider === "google") return { email: e }; // google은 이미 verified 처리
+  if (user.provider === "google") return { email: e };
   if (user.emailVerifiedAt) return { email: e };
 
-  // 기존 토큰 무효화
   await prisma.emailVerification.updateMany({
     where: { userId: user.id, usedAt: null },
     data: { usedAt: new Date() },
