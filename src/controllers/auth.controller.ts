@@ -40,6 +40,7 @@ export const login = async (req: Request, res: Response) => {
 
   return res.json({
     accessToken,
+    refreshToken,
     user,
   });
 };
@@ -70,6 +71,7 @@ export const googleLogin = async (req: Request, res: Response) => {
 
   return res.json({
     accessToken,
+    refreshToken,
     user,
   });
 };
@@ -83,8 +85,32 @@ export const googleLogin = async (req: Request, res: Response) => {
  * POST /auth/refresh
  * body: { refreshToken }
  */
+// export const refresh = async (req: Request, res: Response) => {
+//   const refreshToken = req.cookies.refreshToken;
+
+//   if (!refreshToken) {
+//     return res.status(401).json({ message: "NO_REFRESH_TOKEN" });
+//   }
+
+//   const { accessToken, refreshToken: newRefreshToken } =
+//     await authService.refresh(refreshToken);
+
+//   // 🔥 새 refreshToken 쿠키로 교체
+//   res.cookie("refreshToken", newRefreshToken, {
+//   httpOnly: true,
+//   secure: true,
+//   sameSite: "none",
+//   path: "/auth/refresh",
+//   maxAge: 1000 * 60 * 60 * 24 * 7,
+// });
+
+
+//   // ✅ accessToken은 string으로만 반환
+//   return res.json({ accessToken });
+// };
 export const refresh = async (req: Request, res: Response) => {
-  const refreshToken = req.cookies.refreshToken;
+  const refreshToken =
+    req.cookies?.refreshToken || req.body?.refreshToken;
 
   if (!refreshToken) {
     return res.status(401).json({ message: "NO_REFRESH_TOKEN" });
@@ -93,18 +119,15 @@ export const refresh = async (req: Request, res: Response) => {
   const { accessToken, refreshToken: newRefreshToken } =
     await authService.refresh(refreshToken);
 
-  // 🔥 새 refreshToken 쿠키로 교체
   res.cookie("refreshToken", newRefreshToken, {
-  httpOnly: true,
-  secure: true,
-  sameSite: "none",
-  path: "/auth/refresh",
-  maxAge: 1000 * 60 * 60 * 24 * 7,
-});
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    path: "/auth/refresh",
+    maxAge: 1000 * 60 * 60 * 24 * 7,
+  });
 
-
-  // ✅ accessToken은 string으로만 반환
-  return res.json({ accessToken });
+  return res.json({ accessToken, refreshToken: newRefreshToken }); // refreshToken도 반환
 };
 
 
