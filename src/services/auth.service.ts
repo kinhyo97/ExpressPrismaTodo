@@ -23,7 +23,7 @@ function buildVerifyUrl(token: string) {
   return `${base}/auth/verify?token=${encodeURIComponent(token)}`;
 }
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const googleClient = new OAuth2Client();
 
 export const getMe = async (userId: number) => {
   const user = await prisma.user.findUnique({
@@ -183,15 +183,31 @@ export async function logout(refreshToken: string) {
   }
 }
 
+
+
+
+function getGoogleAudiences() {
+  return [
+    process.env.GOOGLE_WEB_CLIENT_ID,
+    process.env.GOOGLE_IOS_CLIENT_ID,
+    process.env.GOOGLE_ANDROID_CLIENT_ID,
+  ].filter(Boolean) as string[];
+}
+
+// Google 로그인
+
+
+
 // Google 로그인
 export async function loginWithGoogle(idToken: string) {
-  if (!process.env.GOOGLE_CLIENT_ID) {
+  const audiences = getGoogleAudiences();
+  if (audiences.length === 0) {
     throw new Error("GOOGLE_CLIENT_ID_NOT_CONFIGURED");
   }
 
   const ticket = await googleClient.verifyIdToken({
     idToken,
-    audience: process.env.GOOGLE_CLIENT_ID,
+    audience: audiences, // ✅ 웹/ios/android 모두 허용
   });
 
   const payload = ticket.getPayload();
@@ -216,7 +232,7 @@ export async function loginWithGoogle(idToken: string) {
       data: {
         email,
         provider: "google",
-        providerUserId: payload.sub,
+        providerUserId: googleUserId,
         status: "ACTIVE" as any,
         passwordHash: "",
         emailVerifiedAt: new Date(),
@@ -255,6 +271,7 @@ export async function loginWithGoogle(idToken: string) {
     },
   };
 }
+
 
 export async function inactive(userId: number) {
   logger.info(`user inactive service`);
