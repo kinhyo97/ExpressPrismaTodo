@@ -1,0 +1,135 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id    Int    @id @default(autoincrement())
+  email String @unique
+
+  passwordHash String
+
+  provider       String @default("local")
+  providerUserId String?
+
+  emailVerifiedAt DateTime?
+  emailVerifySentAt DateTime?
+
+  status UserStatus @default(ACTIVE)
+
+  todos Todo[]
+  anniversaries Anniversary[]
+  categories   Category[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  emailVerifyTokens EmailVerifyToken[]
+  refreshToken RefreshToken[]
+  emailVerifications EmailVerification[]
+}
+
+model RefreshToken {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token String @unique
+  expiresAt DateTime
+
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model EmailVerifyToken {
+  id Int @id @default(autoincrement())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token String @unique
+  expiresAt DateTime
+  usedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Todo {
+  id        Int      @id @default(autoincrement())
+  title     String
+  completed Boolean  @default(false)
+
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+
+  date DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  reminderTime DateTime?
+  reminderOffset Int?
+
+  description String?
+  @@index([userId, date])
+
+  categoryId Int?
+  category   Category? @relation(fields: [categoryId], references: [id])
+}
+
+model Anniversary {
+  id        Int      @id @default(autoincrement())
+  title     String
+
+  month     Int      // 1 ~ 12
+  day       Int      // 1 ~ 31
+  color     String   // 캘린더 점 색상 (#hex)
+
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, month])
+}
+
+model Category {
+  id     Int    @id @default(autoincrement())
+  name   String
+  color  String
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  todos  Todo[]
+}
+
+/* ENUMS */
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BANNED
+}
+
+model EmailVerification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
