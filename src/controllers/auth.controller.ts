@@ -158,7 +158,11 @@ export const logout = async (req: Request, res: Response) => {
 
 // 회원 비활성화
 export const inactive = async (req: Request, res: Response) => {
-  const userId = req.user!.id;
+  if (!req.user) {
+    return res.status(401).json({ message: "UNAUTHORIZED" });
+  }
+
+  const userId = req.user.userId; // ✅ 여기
   await authService.inactive(userId);
   return res.status(204).send();
 };
