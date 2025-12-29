@@ -31,12 +31,12 @@ export const login = async (req: Request, res: Response) => {
 
   // Refresh Token → HttpOnly Cookie
   res.cookie("refreshToken", refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    path: "/auth/refresh",
-    maxAge: 1000 * 60 * 60 * 24 * 7, // 7일
-  });
+  httpOnly: true,
+  secure: true,
+  sameSite: "none",
+  path: "/auth/refresh",
+  maxAge: 1000 * 60 * 60 * 24 * 7,
+});
 
   return res.json({
     accessToken,
@@ -60,12 +60,13 @@ export const googleLogin = async (req: Request, res: Response) => {
 
   // 기존 login()이랑 똑같이 refresh 토큰 쿠키에 저장
   res.cookie("refreshToken", refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    path: "/auth/refresh",
-    maxAge: 1000 * 60 * 60 * 24 * 7,
-  });
+  httpOnly: true,
+  secure: true,
+  sameSite: "none",
+  path: "/auth/refresh",
+  maxAge: 1000 * 60 * 60 * 24 * 7,
+});
+
 
   return res.json({
     accessToken,
@@ -94,12 +95,13 @@ export const refresh = async (req: Request, res: Response) => {
 
   // 🔥 새 refreshToken 쿠키로 교체
   res.cookie("refreshToken", newRefreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    path: "/auth/refresh",
-    maxAge: 1000 * 60 * 60 * 24 * 7,
-  });
+  httpOnly: true,
+  secure: true,
+  sameSite: "none",
+  path: "/auth/refresh",
+  maxAge: 1000 * 60 * 60 * 24 * 7,
+});
+
 
   // ✅ accessToken은 string으로만 반환
   return res.json({ accessToken });
@@ -122,8 +124,11 @@ export const logout = async (req: Request, res: Response) => {
   }
 
   res.clearCookie("refreshToken", {
-    path: "/auth/refresh",
-  });
+  path: "/auth/refresh",
+  secure: true,
+  sameSite: "none",
+});
+
 
   return res.status(204).send();
 };
